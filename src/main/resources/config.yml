@@ -1,0 +1,43 @@
+# EnchantViewer Plugin Configuration
+# 使用 '&' 作为颜色代码. 例如: '&a这是绿色的'
+
+migration-cost:
+  # 是否启用迁移消耗. 设置为 false 则不消耗任何物品.
+  enabled: true
+  material:
+    # 所需MMOItems材料的类型
+    type: "MATERIAL"
+    # 所需MMOItems材料的ID
+    id: "MANA_GEM"
+    # 所需数量
+    amount: 1
+
+messages:
+  # 应用于所有插件消息的全局前缀
+  prefix: "&d[附魔迁移] &r"
+
+  # 通用消息
+  no-permission: "&c你没有权限使用此命令。"
+  player-only: "&c该命令只能由玩家使用。"
+
+  # GUI 相关消息
+  gui:
+    title: "&5附魔迁移器"
+    button-name: "&a&l开始迁移"
+    button-lore: "&7点击刷新物品并迁移附魔。"
+    item-required: "&c请将需要迁移的物品放入左边的格子。"
+    not-mmoitem: "&c左边的物品不是一个有效的MMOItem。"
+    material-required: "&c请将消耗材料放入右边的格子。"
+    invalid-material: "&c右边的物品不是正确的消耗材料。"
+    insufficient-material: "&c消耗材料数量不足！需要 %amount% 个。"
+    success: "&a物品已刷新，附魔已迁移！"
+    error: "&c创建新物品时发生错误。"
+
+  # /getenchants 命令相关消息
+  command:
+    usage: "&c用法: /getenchants <玩家> <mainhand|offhand>"
+    player-not-found: "&c玩家 %player% 未找到。"
+    invalid-hand: "&c无效的手部选择, 请使用 'mainhand' 或 'offhand'。"
+    not-mmoitem: "&c指定手部的物品不是一个MMOItem。"
+    item-given: "&a一个新物品已给予 %player% 。"
+    refreshed: "&a你的物品已被刷新并迁移了附魔！"
