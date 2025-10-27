@@ -159,26 +159,43 @@ public class MigrateGUI implements Listener {
             }
 
             // 4. Apply the preserved data to the new item
+            logger.info("Original enchantments found: " + originalEnchantments);
+            logger.info("Original repair cost: " + repairCost);
+            logger.info("Equippable component found: " + (equippable != null));
+
             ItemMeta newMeta = newItem.getItemMeta();
 
             // Apply enchantments
-            if (!originalEnchantments.isEmpty()) {
-                newItem.addUnsafeEnchantments(originalEnchantments);
-            }
+            if (newMeta != null) {
+                if (!originalEnchantments.isEmpty()) {
+                    for (Map.Entry<Enchantment, Integer> entry : originalEnchantments.entrySet()) {
+                        newMeta.addEnchant(entry.getKey(), entry.getValue(), true);
+                    }
+                    logger.info("Applied enchantments to new item meta.");
+                }
 
-            // Apply repair cost
-            if (repairCost > 0 && newMeta instanceof Repairable) {
-                ((Repairable) newMeta).setRepairCost(repairCost);
-            }
+                // Apply repair cost
+                if (repairCost > 0 && newMeta instanceof Repairable) {
+                    ((Repairable) newMeta).setRepairCost(repairCost);
+                    logger.info("Applied repair cost to new item meta.");
+                }
 
-            // Apply the Equippable component for the ItemsAdder texture
-            if (equippable != null) {
-                // newMeta.setComponent(EquippableComponent.class, equippable);
-                newMeta.setEquippable(equippable);
-                logger.info("Successfully transferred Equippable component.");
-            }
+                // Apply the Equippable component for the ItemsAdder texture
+                if (equippable != null) {
+                    newMeta.setEquippable(equippable);
+                    logger.info("Successfully transferred Equippable component.");
+                }
 
-            newItem.setItemMeta(newMeta);
+                newItem.setItemMeta(newMeta);
+                logger.info("Final item meta applied to new item.");
+            } else {
+                logger.warning("Could not get ItemMeta for the new item. Migration of enchants/cost/texture might fail.");
+                // Fallback for enchantments if meta is null for some reason
+                if (!originalEnchantments.isEmpty()) {
+                    newItem.addUnsafeEnchantments(originalEnchantments);
+                    logger.info("Applied enchantments directly to item as a fallback.");
+                }
+            }
 
             // logger.info("Generated new item (GUI): " + newItem.toString());
 
