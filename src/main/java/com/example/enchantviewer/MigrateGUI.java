@@ -17,8 +17,11 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.Repairable;
 import org.bukkit.inventory.meta.components.EquippableComponent;
+import org.bukkit.scheduler.BukkitRunnable;
 
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
@@ -28,9 +31,15 @@ public class MigrateGUI implements Listener {
     private final Logger logger;
     private final LocaleManager locale;
     private static final int GUI_SIZE = 45;
-    private static final int ITEM_SLOT = 21; // Slot 4
-    private static final int MATERIAL_SLOT = 23; // Slot 6
+    private static final int ITEM_SLOT = 22; // Center slot of 3x3 grid
+    private static final int MATERIAL_SLOT = 24; // Right of the 3x3 grid
     private static final int BUTTON_SLOT = 40;
+
+    // Animation constants
+    // Sequence: 8-9-6-3-2-1-4-7 around the center item
+    private static final List<Integer> ANIMATION_ORDER = Arrays.asList(31, 32, 23, 14, 13, 12, 21, 30);
+    private static final List<Integer> BORDER_SLOTS = Arrays.asList(12, 13, 14, 21, 23, 30, 31, 32);
+    private static final long ANIMATION_TICK_DELAY = 2L; // 2 ticks = 0.1 seconds
 
     public MigrateGUI(EnchantViewer plugin) {
         this.plugin = plugin;
@@ -73,14 +82,15 @@ public class MigrateGUI implements Listener {
 
         Player player = (Player) event.getWhoClicked();
         int clickedSlot = event.getRawSlot();
+        Inventory inventory = event.getInventory();
 
         if (clickedSlot < GUI_SIZE && clickedSlot != ITEM_SLOT && clickedSlot != MATERIAL_SLOT) {
             event.setCancelled(true);
         }
 
         if (clickedSlot == BUTTON_SLOT) {
-            ItemStack itemToMigrate = event.getInventory().getItem(ITEM_SLOT);
-            ItemStack materialItem = event.getInventory().getItem(MATERIAL_SLOT);
+            ItemStack itemToMigrate = inventory.getItem(ITEM_SLOT);
+            ItemStack materialItem = inventory.getItem(MATERIAL_SLOT);
 
             if (itemToMigrate == null || itemToMigrate.getType() == Material.AIR) {
                 player.sendMessage(locale.getMessage("gui.item-required"));
@@ -126,87 +136,128 @@ public class MigrateGUI implements Listener {
 
                 // Consume material
                 materialItem.setAmount(materialItem.getAmount() - requiredAmount);
-                event.getInventory().setItem(MATERIAL_SLOT, materialItem);
+                inventory.setItem(MATERIAL_SLOT, materialItem);
             }
             // --- End Material Cost Check ---
 
+            // --- Start Animation & Migration ---
+            final ItemStack finalItemToMigrate = itemToMigrate.clone();
+            inventory.setItem(ITEM_SLOT, null); // Remove item during animation
 
-            // --- Start Migration Logic (User's Plan) ---
+            new BukkitRunnable() {
+                private int step = 0;
+                private final ItemStack yellowPane = new ItemStack(Material.YELLOW_STAINED_GLASS_PANE);
+                private final ItemMeta paneMeta = yellowPane.getItemMeta();
 
-            // 1. Save data to be preserved from the old item
-            Map<Enchantment, Integer> originalEnchantments = itemToMigrate.getEnchantments();
-            ItemMeta oldMeta = itemToMigrate.getItemMeta();
+                {
+                    paneMeta.setDisplayName(" ");
+                    yellowPane.setItemMeta(paneMeta);
+                }
 
-            int repairCost = 0;
-            if (oldMeta instanceof Repairable) {
-                repairCost = ((Repairable) oldMeta).getRepairCost();
-            }
+                @Override
+                public void run() {
+                    if (step < ANIMATION_ORDER.size()) {
+                        inventory.setItem(ANIMATION_ORDER.get(step), yellowPane);
+                        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1.0f, 1.2f);
+                        step++;
+                    } else {
+                        this.cancel();
+                        ItemStack newItem = performMigration(player, finalItemToMigrate);
 
-            //EquippableComponent equippable = oldMeta.getComponent(EquippableComponent.class);
-            EquippableComponent equippable = oldMeta.getEquippable();
+                        if (newItem != null) {
+                            player.sendMessage(locale.getMessage("gui.success"));
+                            ItemStack greenPane = new ItemStack(Material.LIME_STAINED_GLASS_PANE);
+                            paneMeta.setDisplayName(" ");
+                            greenPane.setItemMeta(paneMeta);
+                            for (int slot : BORDER_SLOTS) {
+                                inventory.setItem(slot, greenPane);
+                            }
+                            player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
+                            inventory.setItem(ITEM_SLOT, newItem);
 
-            // 2. Get MMOItems identifiers
-            String itemType = nbtItemToMigrate.getString("MMOITEMS_ITEM_TYPE");
-            String itemID = nbtItemToMigrate.getString("MMOITEMS_ITEM_ID");
-            logger.info("Starting GUI migration for " + player.getName() + ". MMOItem Type: " + itemType + ", ID: " + itemID);
-
-            // 3. Generate a new item using MMOItems to get fresh random stats
-            ItemStack newItem = MMOItems.plugin.getItem(itemType, itemID);
-            if (newItem == null) {
-                logger.severe("Failed to generate new MMOItem via GUI. Type or ID might be invalid.");
-                player.sendMessage(locale.getMessage("gui.error"));
-                return;
-            }
-
-            // 4. Apply the preserved data to the new item
-            logger.info("Original enchantments found: " + originalEnchantments);
-            logger.info("Original repair cost: " + repairCost);
-            logger.info("Equippable component found: " + (equippable != null));
-
-            ItemMeta newMeta = newItem.getItemMeta();
-
-            // Apply enchantments
-            if (newMeta != null) {
-                if (!originalEnchantments.isEmpty()) {
-                    for (Map.Entry<Enchantment, Integer> entry : originalEnchantments.entrySet()) {
-                        newMeta.addEnchant(entry.getKey(), entry.getValue(), true);
+                            new BukkitRunnable() {
+                                @Override
+                                public void run() {
+                                    ItemStack grayPane = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
+                                    paneMeta.setDisplayName(" ");
+                                    grayPane.setItemMeta(paneMeta);
+                                    for (int slot : BORDER_SLOTS) {
+                                        inventory.setItem(slot, grayPane);
+                                    }
+                                }
+                            }.runTaskLater(plugin, 20L); // 1 second
+                        } else {
+                            // Migration failed, error message sent in performMigration
+                            inventory.setItem(ITEM_SLOT, finalItemToMigrate);
+                            ItemStack grayPane = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
+                            paneMeta.setDisplayName(" ");
+                            grayPane.setItemMeta(paneMeta);
+                            for (int slot : BORDER_SLOTS) {
+                                inventory.setItem(slot, grayPane);
+                            }
+                        }
                     }
-                    logger.info("Applied enchantments to new item meta.");
                 }
+            }.runTaskTimer(plugin, 0L, ANIMATION_TICK_DELAY);
+        }
+    }
 
-                // Apply repair cost
-                if (repairCost > 0 && newMeta instanceof Repairable) {
-                    ((Repairable) newMeta).setRepairCost(repairCost);
-                    logger.info("Applied repair cost to new item meta.");
-                }
+    private ItemStack performMigration(Player player, ItemStack itemToMigrate) {
+        NBTItem nbtItemToMigrate = NBTItem.get(itemToMigrate);
+        Map<Enchantment, Integer> originalEnchantments = itemToMigrate.getEnchantments();
+        ItemMeta oldMeta = itemToMigrate.getItemMeta();
 
-                // Apply the Equippable component for the ItemsAdder texture
-                if (equippable != null) {
-                    newMeta.setEquippable(equippable);
-                    logger.info("Successfully transferred Equippable component.");
-                }
+        int repairCost = 0;
+        if (oldMeta instanceof Repairable) {
+            repairCost = ((Repairable) oldMeta).getRepairCost();
+        }
 
-                newItem.setItemMeta(newMeta);
-                logger.info("Final item meta applied to new item.");
-            } else {
-                logger.warning("Could not get ItemMeta for the new item. Migration of enchants/cost/texture might fail.");
-                // Fallback for enchantments if meta is null for some reason
-                if (!originalEnchantments.isEmpty()) {
-                    newItem.addUnsafeEnchantments(originalEnchantments);
-                    logger.info("Applied enchantments directly to item as a fallback.");
+        EquippableComponent equippable = oldMeta.getEquippable();
+        String itemType = nbtItemToMigrate.getString("MMOITEMS_ITEM_TYPE");
+        String itemID = nbtItemToMigrate.getString("MMOITEMS_ITEM_ID");
+        logger.info("Starting GUI migration for " + player.getName() + ". MMOItem Type: " + itemType + ", ID: " + itemID);
+
+        ItemStack newItem = MMOItems.plugin.getItem(itemType, itemID);
+        if (newItem == null) {
+            logger.severe("Failed to generate new MMOItem via GUI. Type or ID might be invalid.");
+            player.sendMessage(locale.getMessage("gui.error"));
+            player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
+            return null;
+        }
+
+        logger.info("Original enchantments found: " + originalEnchantments);
+        logger.info("Original repair cost: " + repairCost);
+        logger.info("Equippable component found: " + (equippable != null));
+
+        ItemMeta newMeta = newItem.getItemMeta();
+        if (newMeta != null) {
+            if (!originalEnchantments.isEmpty()) {
+                for (Map.Entry<Enchantment, Integer> entry : originalEnchantments.entrySet()) {
+                    newMeta.addEnchant(entry.getKey(), entry.getValue(), true);
                 }
+                logger.info("Applied enchantments to new item meta.");
             }
 
-            // logger.info("Generated new item (GUI): " + newItem.toString());
+            if (repairCost > 0 && newMeta instanceof Repairable) {
+                ((Repairable) newMeta).setRepairCost(repairCost);
+                logger.info("Applied repair cost to new item meta.");
+            }
 
-            // 5. Update the GUI
-            final ItemStack finalNewItem = newItem;
-            Bukkit.getScheduler().runTask(plugin, () -> event.getInventory().setItem(ITEM_SLOT, finalNewItem));
+            if (equippable != null) {
+                newMeta.setEquippable(equippable);
+                logger.info("Successfully transferred Equippable component.");
+            }
 
-            player.sendMessage(locale.getMessage("gui.success"));
-            player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
-            // --- End Migration Logic ---
+            newItem.setItemMeta(newMeta);
+            logger.info("Final item meta applied to new item.");
+        } else {
+            logger.warning("Could not get ItemMeta for the new item. Migration of enchants/cost/texture might fail.");
+            if (!originalEnchantments.isEmpty()) {
+                newItem.addUnsafeEnchantments(originalEnchantments);
+                logger.info("Applied enchantments directly to item as a fallback.");
+            }
         }
+        return newItem;
     }
 
     @EventHandler
