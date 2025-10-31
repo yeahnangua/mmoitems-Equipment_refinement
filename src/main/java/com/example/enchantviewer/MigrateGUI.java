@@ -177,7 +177,6 @@ public class MigrateGUI implements Listener {
 
             // --- Start Animation & Migration ---
             final ItemStack finalItemToMigrate = itemToMigrate.clone();
-            inventory.setItem(ITEM_SLOT, null); // Remove item during animation
 
             // Replace button with a placeholder
             ItemStack placeholder = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
