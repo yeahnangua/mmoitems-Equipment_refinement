@@ -1,5 +1,6 @@
 package com.example.enchantviewer;
 
+import io.lumine.mythic.lib.api.item.ItemTag;
 import io.lumine.mythic.lib.api.item.NBTItem;
 import net.Indyuce.mmoitems.MMOItems;
 import org.bukkit.Bukkit;
@@ -287,12 +288,27 @@ public class MigrateGUI implements Listener {
             return null;
         }
 
+        // --- NBT Data Transfer ---
+        NBTItem newNbt = NBTItem.get(newItem);
+
+        for (String key : nbtItemToMigrate.getTags()) {
+            if (!key.equals("MMOITEMS_ITEM_STATS") && !key.equals("MMOITEMS_LORE")) {
+                // As corrected by user, create a new ItemTag object
+                newNbt.addTag(new ItemTag(key, nbtItemToMigrate.get(key)));
+            }
+        }
+        logger.info("Transferred auxiliary NBT data from original item.");
+
+        newItem = newNbt.toItem();
+        // --- End NBT Data Transfer ---
+
         logger.info("Original enchantments found: " + originalEnchantments);
         logger.info("Original repair cost: " + repairCost);
         logger.info("Equippable component found: " + (equippable != null));
 
         ItemMeta newMeta = newItem.getItemMeta();
         if (newMeta != null) {
+            // Re-apply vanilla enchantments and repair cost, as they are not part of the MMOItems NBT copy
             if (!originalEnchantments.isEmpty()) {
                 for (Map.Entry<Enchantment, Integer> entry : originalEnchantments.entrySet()) {
                     newMeta.addEnchant(entry.getKey(), entry.getValue(), true);
