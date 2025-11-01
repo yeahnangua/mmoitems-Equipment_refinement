@@ -275,7 +275,10 @@ public class MigrateGUI implements Listener {
             repairCost = ((Repairable) oldMeta).getRepairCost();
         }
 
-        EquippableComponent equippable = oldMeta.getEquippable();
+        EquippableComponent equippable = null;
+        if (oldMeta.getAsComponentString().contains("minecraft:equippable")) {
+            equippable = oldMeta.getEquippable();
+        }
         String itemType = nbtItemToMigrate.getString("MMOITEMS_ITEM_TYPE");
         String itemID = nbtItemToMigrate.getString("MMOITEMS_ITEM_ID");
         logger.info("Starting GUI migration for " + player.getName() + ". MMOItem Type: " + itemType + ", ID: " + itemID);
@@ -322,6 +325,7 @@ public class MigrateGUI implements Listener {
             }
 
             if (equippable != null) {
+                logger.info("Found and transferring Equippable component with slot: " + equippable.getSlot());
                 newMeta.setEquippable(equippable);
                 logger.info("Successfully transferred Equippable component.");
             }
