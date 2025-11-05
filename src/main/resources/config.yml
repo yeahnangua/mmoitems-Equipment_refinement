@@ -1,6 +1,16 @@
 # EnchantViewer Plugin Configuration
 # 使用 '&' 作为颜色代码. 例如: '&a这是绿色的'
 
+gui:
+  animation:
+    #是否开启动画
+    enabled: true
+  slots:
+    item: 22
+    material: 24
+    button: 40
+
+
 migration-cost:
   # 是否启用迁移消耗. 设置为 false 则不消耗任何物品.
   enabled: true
