@@ -20,14 +20,7 @@ import org.bukkit.inventory.meta.Repairable;
 import org.bukkit.inventory.meta.components.EquippableComponent;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.logging.Logger;
 
 public class MigrateGUI implements Listener {
@@ -41,19 +34,32 @@ public class MigrateGUI implements Listener {
     private final Logger logger;
     private final LocaleManager locale;
     private static final int GUI_SIZE = 45;
-    private static final int ITEM_SLOT = 22; // Center slot of 3x3 grid
-    private static final int MATERIAL_SLOT = 24; // Right of the 3x3 grid
-    private static final int BUTTON_SLOT = 40;
+    private int ITEM_SLOT;
+    private int MATERIAL_SLOT;
+    private int BUTTON_SLOT;
+    private boolean animationEnabled;
+
+//    private static final int ITEM_SLOT = 22; // Center slot of 3x3 grid
+//    private static final int MATERIAL_SLOT = 24; // Right of the 3x3 grid
+//    private static final int BUTTON_SLOT = 40;
+
 
     // Animation constants
     // Sequence: 8-9-6-3-2-1-4-7 around the center item
-    private static final List<Integer> ANIMATION_ORDER = Arrays.asList(31, 32, 23, 14, 13, 12, 21, 30);
     private static final long ANIMATION_TICK_DELAY = 2L; // 2 ticks = 0.1 seconds
+
 
     public MigrateGUI(EnchantViewer plugin) {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.locale = plugin.getLocaleManager();
+
+        FileConfiguration config = plugin.getConfig();
+        this.ITEM_SLOT = config.getInt("gui.slots.item", 22);
+        this.MATERIAL_SLOT = config.getInt("gui.slots.material", 24);
+        this.BUTTON_SLOT = config.getInt("gui.slots.button", 40);
+        this.animationEnabled = config.getBoolean("gui.animation.enabled", true);
+
         Bukkit.getPluginManager().registerEvents(this, plugin);
     }
 
@@ -100,13 +106,14 @@ public class MigrateGUI implements Listener {
             return;
         }
 
-        // Allow placing/taking items from the main and material slots, but cancel clicks elsewhere.
+        // Allow placing/taking items only from item/material slots.
         if (clickedSlot < GUI_SIZE && clickedSlot != ITEM_SLOT && clickedSlot != MATERIAL_SLOT) {
             event.setCancelled(true);
         }
 
+        // Handle button click
         if (clickedSlot == BUTTON_SLOT) {
-            event.setCancelled(true); // Always cancel the button click to prevent taking the anvil.
+            event.setCancelled(true); // Prevent taking the anvil
 
             ItemStack itemToMigrate = inventory.getItem(ITEM_SLOT);
             ItemStack materialItem = inventory.getItem(MATERIAL_SLOT);
@@ -156,7 +163,6 @@ public class MigrateGUI implements Listener {
             }
             // --- End Material Cost Check ---
 
-            // Set player as migrating
             migratingPlayers.add(playerUUID);
             itemsInProcess.put(playerUUID, itemToMigrate.clone());
 
@@ -175,37 +181,48 @@ public class MigrateGUI implements Listener {
                 }
             }
 
+            // 判断是否启用动画
+            if (!animationEnabled) {
+                ItemStack newItem = performMigration(player, itemToMigrate.clone());
+                if (newItem != null) {
+                    player.sendMessage(locale.getMessage("gui.success"));
+                    player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
+                    inventory.setItem(ITEM_SLOT, newItem);
+                } else {
+                    inventory.setItem(ITEM_SLOT, itemToMigrate);
+                }
+                cleanup(player, inventory);
+                return;
+            }
 
-            // --- Start Animation & Migration ---
+            // --- Start Animated Migration ---
             final ItemStack finalItemToMigrate = itemToMigrate.clone();
+            final List<Integer> animationOrder = getAnimationOrder(ITEM_SLOT); // 动态生成动画轨迹
 
-            // Replace button with a placeholder
+            // Replace button with placeholder
             ItemStack placeholder = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
             ItemMeta placeholderMeta = placeholder.getItemMeta();
             placeholderMeta.setDisplayName(" ");
             placeholder.setItemMeta(placeholderMeta);
             inventory.setItem(BUTTON_SLOT, placeholder);
 
-
             BukkitRunnable migrationTask = new BukkitRunnable() {
                 private int step = 0;
 
                 @Override
                 public void run() {
-                    // Safety check: ensure player is online and GUI is still open
                     if (!player.isOnline() || !player.getOpenInventory().getTitle().equals(locale.getRawMessage("gui.title"))) {
                         this.cancel();
-                        // Item will be returned by onInventoryClose event
                         return;
                     }
 
-                    if (step < ANIMATION_ORDER.size()) {
+                    if (step < animationOrder.size()) {
                         ItemStack yellowPane = new ItemStack(Material.YELLOW_STAINED_GLASS_PANE);
-                        ItemMeta paneMeta = yellowPane.getItemMeta();
-                        paneMeta.setDisplayName(" ");
-                        yellowPane.setItemMeta(paneMeta);
+                        ItemMeta meta = yellowPane.getItemMeta();
+                        meta.setDisplayName(" ");
+                        yellowPane.setItemMeta(meta);
 
-                        inventory.setItem(ANIMATION_ORDER.get(step), yellowPane);
+                        inventory.setItem(animationOrder.get(step), yellowPane);
                         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_HAT, 1.0f, 1.2f);
                         step++;
                     } else {
@@ -215,10 +232,10 @@ public class MigrateGUI implements Listener {
                         if (newItem != null) {
                             player.sendMessage(locale.getMessage("gui.success"));
                             ItemStack greenPane = new ItemStack(Material.LIME_STAINED_GLASS_PANE);
-                            ItemMeta paneMeta = greenPane.getItemMeta();
-                            paneMeta.setDisplayName(" ");
-                            greenPane.setItemMeta(paneMeta);
-                            for (int slot : ANIMATION_ORDER) {
+                            ItemMeta meta = greenPane.getItemMeta();
+                            meta.setDisplayName(" ");
+                            greenPane.setItemMeta(meta);
+                            for (int slot : animationOrder) {
                                 inventory.setItem(slot, greenPane);
                             }
                             player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
@@ -227,33 +244,28 @@ public class MigrateGUI implements Listener {
                             new BukkitRunnable() {
                                 @Override
                                 public void run() {
-                                    // Check if GUI is still open before resetting panes
-                                    
-
                                     if (player.getOpenInventory().getTitle().equals(locale.getRawMessage("gui.title"))) {
                                         ItemStack grayPane = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
-                                        ItemMeta paneMeta = grayPane.getItemMeta();
-                                        paneMeta.setDisplayName(" ");
-                                        grayPane.setItemMeta(paneMeta);
-                                        for (int slot : ANIMATION_ORDER) {
+                                        ItemMeta meta = grayPane.getItemMeta();
+                                        meta.setDisplayName(" ");
+                                        grayPane.setItemMeta(meta);
+                                        for (int slot : animationOrder) {
                                             inventory.setItem(slot, grayPane);
                                         }
                                     }
-                                    // Restore button and remove player from migrating set
                                     cleanup(player, inventory);
                                 }
-                            }.runTaskLater(plugin, 20L); // 1 second
+                            }.runTaskLater(plugin, 20L); // 延迟1秒恢复
                         } else {
                             // Migration failed
-                            inventory.setItem(ITEM_SLOT, finalItemToMigrate); // Return original item
+                            inventory.setItem(ITEM_SLOT, finalItemToMigrate);
                             ItemStack grayPane = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
-                            ItemMeta paneMeta = grayPane.getItemMeta();
-                            paneMeta.setDisplayName(" ");
-                            grayPane.setItemMeta(paneMeta);
-                            for (int slot : ANIMATION_ORDER) {
+                            ItemMeta meta = grayPane.getItemMeta();
+                            meta.setDisplayName(" ");
+                            grayPane.setItemMeta(meta);
+                            for (int slot : animationOrder) {
                                 inventory.setItem(slot, grayPane);
                             }
-                            // Restore button and remove player from migrating set
                             cleanup(player, inventory);
                         }
                     }
@@ -264,6 +276,25 @@ public class MigrateGUI implements Listener {
             migrationTask.runTaskTimer(plugin, 0L, ANIMATION_TICK_DELAY);
         }
     }
+
+    private List<Integer> getAnimationOrder(int centerSlot) {
+        int row = centerSlot / 9;
+        int col = centerSlot % 9;
+        List<Integer> path = new ArrayList<>();
+
+        // 顺时针环绕路径
+        if (row > 0 && col > 0) path.add((row - 1) * 9 + (col - 1)); // 左上
+        if (row > 0) path.add((row - 1) * 9 + col);                   // 上
+        if (row > 0 && col < 8) path.add((row - 1) * 9 + (col + 1)); // 右上
+        if (col < 8) path.add(row * 9 + (col + 1));                   // 右
+        if (row < 4 && col < 8) path.add((row + 1) * 9 + (col + 1)); // 右下
+        if (row < 4) path.add((row + 1) * 9 + col);                   // 下
+        if (row < 4 && col > 0) path.add((row + 1) * 9 + (col - 1)); // 左下
+        if (col > 0) path.add(row * 9 + (col - 1));                   // 左
+
+        return path;
+    }
+
 
     private ItemStack performMigration(Player player, ItemStack itemToMigrate) {
         NBTItem nbtItemToMigrate = NBTItem.get(itemToMigrate);
