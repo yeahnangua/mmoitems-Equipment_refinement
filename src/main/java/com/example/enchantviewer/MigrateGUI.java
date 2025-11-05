@@ -41,9 +41,15 @@ public class MigrateGUI implements Listener {
     private final Logger logger;
     private final LocaleManager locale;
     private static final int GUI_SIZE = 45;
-    private static final int ITEM_SLOT = 22; // Center slot of 3x3 grid
-    private static final int MATERIAL_SLOT = 24; // Right of the 3x3 grid
-    private static final int BUTTON_SLOT = 40;
+    private int ITEM_SLOT;
+    private int MATERIAL_SLOT;
+    private int BUTTON_SLOT;
+    private boolean animationEnabled;
+
+//    private static final int ITEM_SLOT = 22; // Center slot of 3x3 grid
+//    private static final int MATERIAL_SLOT = 24; // Right of the 3x3 grid
+//    private static final int BUTTON_SLOT = 40;
+
 
     // Animation constants
     // Sequence: 8-9-6-3-2-1-4-7 around the center item
@@ -54,6 +60,13 @@ public class MigrateGUI implements Listener {
         this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.locale = plugin.getLocaleManager();
+
+        FileConfiguration config = plugin.getConfig();
+        this.ITEM_SLOT = config.getInt("gui.slots.item", 22);
+        this.MATERIAL_SLOT = config.getInt("gui.slots.material", 24);
+        this.BUTTON_SLOT = config.getInt("gui.slots.button", 40);
+        this.animationEnabled = config.getBoolean("gui.animation.enabled", true);
+
         Bukkit.getPluginManager().registerEvents(this, plugin);
     }
 
@@ -175,9 +188,24 @@ public class MigrateGUI implements Listener {
                 }
             }
 
+            // 判断动画
+            if (!animationEnabled) {
+                // 不播放动画，直接迁移
+                ItemStack newItem = performMigration(player, itemToMigrate.clone());
+                if (newItem != null) {
+                    player.sendMessage(locale.getMessage("gui.success"));
+                    player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
+                    inventory.setItem(ITEM_SLOT, newItem);
+                } else {
+                    inventory.setItem(ITEM_SLOT, itemToMigrate);
+                }
+                cleanup(player, inventory);
+                return;
+            }
 
             // --- Start Animation & Migration ---
             final ItemStack finalItemToMigrate = itemToMigrate.clone();
+
 
             // Replace button with a placeholder
             ItemStack placeholder = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
