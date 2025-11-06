@@ -20,14 +20,7 @@ import org.bukkit.inventory.meta.Repairable;
 import org.bukkit.inventory.meta.components.EquippableComponent;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.logging.Logger;
 
 public class MigrateGUI implements Listener {
@@ -275,6 +268,16 @@ public class MigrateGUI implements Listener {
             repairCost = ((Repairable) oldMeta).getRepairCost();
         }
 
+        // --- Custom Durability ---
+        int durability = 0;
+        int maxDurability = 0;
+        if (nbtItemToMigrate.hasTag("MMOITEMS_DURABILITY")) {
+            durability = nbtItemToMigrate.getInteger("MMOITEMS_DURABILITY");
+            maxDurability = nbtItemToMigrate.getInteger("MMOITEMS_MAX_DURABILITY");
+            logger.info("Original durability: " + durability + "/" + maxDurability);
+        }
+        // --- End Custom Durability ---
+
         EquippableComponent equippable = null;
         if (oldMeta.getAsComponentString().contains("minecraft:equippable")) {
             equippable = oldMeta.getEquippable();
@@ -302,6 +305,14 @@ public class MigrateGUI implements Listener {
         }
         logger.info("Transferred auxiliary NBT data from original item.");
 
+        // --- Custom Durability ---
+        if (maxDurability > 0) {
+            newNbt.addTag(new ItemTag("MMOITEMS_DURABILITY", durability));
+            newNbt.addTag(new ItemTag("MMOITEMS_MAX_DURABILITY", maxDurability));
+            logger.info("Applied custom durability to new item.");
+        }
+        // --- End Custom Durability ---
+
         newItem = newNbt.toItem();
         // --- End NBT Data Transfer ---
 
@@ -311,6 +322,24 @@ public class MigrateGUI implements Listener {
 
         ItemMeta newMeta = newItem.getItemMeta();
         if (newMeta != null) {
+            // --- Lore Update ---
+            if (maxDurability > 0) {
+                List<String> lore = newMeta.getLore();
+                if (lore != null) {
+                    List<String> newLore = new ArrayList<>();
+                    for (String line : lore) {
+                        if (line.contains("耐久:")) {
+                            newLore.add("§7耐久: " + durability + " / " + maxDurability);
+                        } else {
+                            newLore.add(line);
+                        }
+                    }
+                    newMeta.setLore(newLore);
+                    logger.info("Updated durability in lore.");
+                }
+            }
+            // --- End Lore Update ---
+
             // Re-apply vanilla enchantments and repair cost, as they are not part of the MMOItems NBT copy
             if (!originalEnchantments.isEmpty()) {
                 for (Map.Entry<Enchantment, Integer> entry : originalEnchantments.entrySet()) {
