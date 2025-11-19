@@ -34,9 +34,14 @@ public class MigrateGUI implements Listener {
     private final Logger logger;
     private final LocaleManager locale;
     private static final int GUI_SIZE = 45;
-    private static final int ITEM_SLOT = 22; // Center slot of 3x3 grid
-    private static final int MATERIAL_SLOT = 24; // Right of the 3x3 grid
-    private static final int BUTTON_SLOT = 40;
+    private int ITEM_SLOT;
+    private int MATERIAL_SLOT;
+    private int BUTTON_SLOT;
+    private boolean animationEnabled;
+
+    // private static final int ITEM_SLOT = 22; // Center slot of 3x3 grid
+    // private static final int MATERIAL_SLOT = 24; // Right of the 3x3 grid
+    // private static final int BUTTON_SLOT = 40;
 
     // Animation constants
     // Sequence: 8-9-6-3-2-1-4-7 around the center item
@@ -93,7 +98,8 @@ public class MigrateGUI implements Listener {
             return;
         }
 
-        // Allow placing/taking items from the main and material slots, but cancel clicks elsewhere.
+        // Allow placing/taking items from the main and material slots, but cancel
+        // clicks elsewhere.
         if (clickedSlot < GUI_SIZE && clickedSlot != ITEM_SLOT && clickedSlot != MATERIAL_SLOT) {
             event.setCancelled(true);
         }
@@ -120,10 +126,29 @@ public class MigrateGUI implements Listener {
             // --- Material Cost Check ---
             FileConfiguration config = plugin.getConfig();
             int requiredAmount = 0;
+            int refineCount = 0;
+
+            if (nbtItemToMigrate.hasTag("MMOITEMS_REFINE_COUNT")) {
+                refineCount = nbtItemToMigrate.getInteger("MMOITEMS_REFINE_COUNT");
+            }
+
             if (config.getBoolean("migration-cost.enabled", true)) {
                 String requiredType = config.getString("migration-cost.material.type");
                 String requiredId = config.getString("migration-cost.material.id");
-                requiredAmount = config.getInt("migration-cost.material.amount", 1);
+                List<Integer> amounts = config.getIntegerList("migration-cost.material.amounts");
+
+                // Fallback for old config or empty list
+                if (amounts.isEmpty()) {
+                    amounts.add(config.getInt("migration-cost.material.amount", 1));
+                }
+
+                if (refineCount >= amounts.size()) {
+                    player.sendMessage(locale.getMessage("gui.limit-reached"));
+                    player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
+                    return;
+                }
+
+                requiredAmount = amounts.get(refineCount);
 
                 if (materialItem == null || materialItem.getType() == Material.AIR) {
                     player.sendMessage(locale.getMessage("gui.material-required"));
@@ -142,7 +167,8 @@ public class MigrateGUI implements Listener {
                 }
 
                 if (materialItem.getAmount() < requiredAmount) {
-                    player.sendMessage(locale.getMessage("gui.insufficient-material", "%amount%", String.valueOf(requiredAmount)));
+                    player.sendMessage(
+                            locale.getMessage("gui.insufficient-material", "%amount%", String.valueOf(requiredAmount)));
                     player.playSound(player.getLocation(), Sound.ENTITY_VILLAGER_NO, 1.0f, 1.0f);
                     return;
                 }
@@ -168,6 +194,24 @@ public class MigrateGUI implements Listener {
                 }
             }
 
+            // 判断是否启用动画
+            if (!animationEnabled) {
+                ItemStack newItem = performMigration(player, itemToMigrate.clone());
+                if (newItem != null) {
+                    int newCount = 0;
+                    NBTItem newNbt = NBTItem.get(newItem);
+                    if (newNbt.hasTag("MMOITEMS_REFINE_COUNT")) {
+                        newCount = newNbt.getInteger("MMOITEMS_REFINE_COUNT");
+                    }
+                    player.sendMessage(locale.getMessage("gui.success", "%count%", String.valueOf(newCount)));
+                    player.playSound(player.getLocation(), Sound.BLOCK_ANVIL_USE, 1.0f, 1.0f);
+                    inventory.setItem(ITEM_SLOT, newItem);
+                } else {
+                    inventory.setItem(ITEM_SLOT, itemToMigrate);
+                }
+                cleanup(player, inventory);
+                return;
+            }
 
             // --- Start Animation & Migration ---
             final ItemStack finalItemToMigrate = itemToMigrate.clone();
@@ -179,14 +223,13 @@ public class MigrateGUI implements Listener {
             placeholder.setItemMeta(placeholderMeta);
             inventory.setItem(BUTTON_SLOT, placeholder);
 
-
             BukkitRunnable migrationTask = new BukkitRunnable() {
                 private int step = 0;
 
                 @Override
                 public void run() {
-                    // Safety check: ensure player is online and GUI is still open
-                    if (!player.isOnline() || !player.getOpenInventory().getTitle().equals(locale.getRawMessage("gui.title"))) {
+                    if (!player.isOnline()
+                            || !player.getOpenInventory().getTitle().equals(locale.getRawMessage("gui.title"))) {
                         this.cancel();
                         // Item will be returned by onInventoryClose event
                         return;
@@ -206,7 +249,12 @@ public class MigrateGUI implements Listener {
                         ItemStack newItem = performMigration(player, finalItemToMigrate);
 
                         if (newItem != null) {
-                            player.sendMessage(locale.getMessage("gui.success"));
+                            int newCount = 0;
+                            NBTItem newNbt = NBTItem.get(newItem);
+                            if (newNbt.hasTag("MMOITEMS_REFINE_COUNT")) {
+                                newCount = newNbt.getInteger("MMOITEMS_REFINE_COUNT");
+                            }
+                            player.sendMessage(locale.getMessage("gui.success", "%count%", String.valueOf(newCount)));
                             ItemStack greenPane = new ItemStack(Material.LIME_STAINED_GLASS_PANE);
                             ItemMeta paneMeta = greenPane.getItemMeta();
                             paneMeta.setDisplayName(" ");
@@ -220,10 +268,8 @@ public class MigrateGUI implements Listener {
                             new BukkitRunnable() {
                                 @Override
                                 public void run() {
-                                    // Check if GUI is still open before resetting panes
-                                    
-
-                                    if (player.getOpenInventory().getTitle().equals(locale.getRawMessage("gui.title"))) {
+                                    if (player.getOpenInventory().getTitle()
+                                            .equals(locale.getRawMessage("gui.title"))) {
                                         ItemStack grayPane = new ItemStack(Material.GRAY_STAINED_GLASS_PANE);
                                         ItemMeta paneMeta = grayPane.getItemMeta();
                                         paneMeta.setDisplayName(" ");
@@ -258,6 +304,32 @@ public class MigrateGUI implements Listener {
         }
     }
 
+    private List<Integer> getAnimationOrder(int centerSlot) {
+        int row = centerSlot / 9;
+        int col = centerSlot % 9;
+        List<Integer> path = new ArrayList<>();
+
+        // 顺时针环绕路径
+        if (row > 0 && col > 0)
+            path.add((row - 1) * 9 + (col - 1)); // 左上
+        if (row > 0)
+            path.add((row - 1) * 9 + col); // 上
+        if (row > 0 && col < 8)
+            path.add((row - 1) * 9 + (col + 1)); // 右上
+        if (col < 8)
+            path.add(row * 9 + (col + 1)); // 右
+        if (row < 4 && col < 8)
+            path.add((row + 1) * 9 + (col + 1)); // 右下
+        if (row < 4)
+            path.add((row + 1) * 9 + col); // 下
+        if (row < 4 && col > 0)
+            path.add((row + 1) * 9 + (col - 1)); // 左下
+        if (col > 0)
+            path.add(row * 9 + (col - 1)); // 左
+
+        return path;
+    }
+
     private ItemStack performMigration(Player player, ItemStack itemToMigrate) {
         NBTItem nbtItemToMigrate = NBTItem.get(itemToMigrate);
         Map<Enchantment, Integer> originalEnchantments = itemToMigrate.getEnchantments();
@@ -284,7 +356,8 @@ public class MigrateGUI implements Listener {
         }
         String itemType = nbtItemToMigrate.getString("MMOITEMS_ITEM_TYPE");
         String itemID = nbtItemToMigrate.getString("MMOITEMS_ITEM_ID");
-        logger.info("Starting GUI migration for " + player.getName() + ". MMOItem Type: " + itemType + ", ID: " + itemID);
+        logger.info(
+                "Starting GUI migration for " + player.getName() + ". MMOItem Type: " + itemType + ", ID: " + itemID);
 
         ItemStack newItem = MMOItems.plugin.getItem(itemType, itemID);
         if (newItem == null) {
@@ -303,6 +376,14 @@ public class MigrateGUI implements Listener {
                 newNbt.addTag(new ItemTag(key, nbtItemToMigrate.get(key)));
             }
         }
+
+        // Update Refine Count
+        int currentCount = 0;
+        if (nbtItemToMigrate.hasTag("MMOITEMS_REFINE_COUNT")) {
+            currentCount = nbtItemToMigrate.getInteger("MMOITEMS_REFINE_COUNT");
+        }
+        newNbt.addTag(new ItemTag("MMOITEMS_REFINE_COUNT", currentCount + 1));
+
         logger.info("Transferred auxiliary NBT data from original item.");
 
         // --- Custom Durability ---
@@ -322,25 +403,8 @@ public class MigrateGUI implements Listener {
 
         ItemMeta newMeta = newItem.getItemMeta();
         if (newMeta != null) {
-            // --- Lore Update ---
-            if (maxDurability > 0) {
-                List<String> lore = newMeta.getLore();
-                if (lore != null) {
-                    List<String> newLore = new ArrayList<>();
-                    for (String line : lore) {
-                        if (line.contains("耐久:")) {
-                            newLore.add("§7耐久: " + durability + " / " + maxDurability);
-                        } else {
-                            newLore.add(line);
-                        }
-                    }
-                    newMeta.setLore(newLore);
-                    logger.info("Updated durability in lore.");
-                }
-            }
-            // --- End Lore Update ---
-
-            // Re-apply vanilla enchantments and repair cost, as they are not part of the MMOItems NBT copy
+            // Re-apply vanilla enchantments and repair cost, as they are not part of the
+            // MMOItems NBT copy
             if (!originalEnchantments.isEmpty()) {
                 for (Map.Entry<Enchantment, Integer> entry : originalEnchantments.entrySet()) {
                     newMeta.addEnchant(entry.getKey(), entry.getValue(), true);
