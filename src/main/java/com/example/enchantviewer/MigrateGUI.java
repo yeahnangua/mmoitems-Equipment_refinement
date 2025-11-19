@@ -39,6 +39,10 @@ public class MigrateGUI implements Listener {
     private int BUTTON_SLOT;
     private boolean animationEnabled;
 
+    // private static final int ITEM_SLOT = 22; // Center slot of 3x3 grid
+    // private static final int MATERIAL_SLOT = 24; // Right of the 3x3 grid
+    // private static final int BUTTON_SLOT = 40;
+
     // Animation constants
     // Sequence: 8-9-6-3-2-1-4-7 around the center item
     private static final List<Integer> ANIMATION_ORDER = Arrays.asList(31, 32, 23, 14, 13, 12, 21, 30);
