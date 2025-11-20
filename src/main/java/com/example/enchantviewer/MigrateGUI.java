@@ -494,19 +494,28 @@ public class MigrateGUI implements Listener {
             // Return the original item that was being processed
             ItemStack originalItem = itemsInProcess.get(playerUUID);
             if (originalItem != null) {
-                player.getInventory().addItem(originalItem);
+                HashMap<Integer, ItemStack> leftovers = player.getInventory().addItem(originalItem);
+                for (ItemStack leftover : leftovers.values()) {
+                    player.getWorld().dropItem(player.getLocation(), leftover);
+                }
             }
 
             // Return the materials that were consumed for the process
             ItemStack consumed = materialsConsumed.get(playerUUID);
             if (consumed != null) {
-                player.getInventory().addItem(consumed);
+                HashMap<Integer, ItemStack> leftovers = player.getInventory().addItem(consumed);
+                for (ItemStack leftover : leftovers.values()) {
+                    player.getWorld().dropItem(player.getLocation(), leftover);
+                }
             }
 
             // Also return any materials that were left over in the slot
             ItemStack materialLeft = gui.getItem(MATERIAL_SLOT);
             if (materialLeft != null && materialLeft.getType() != Material.AIR) {
-                player.getInventory().addItem(materialLeft);
+                HashMap<Integer, ItemStack> leftovers = player.getInventory().addItem(materialLeft);
+                for (ItemStack leftover : leftovers.values()) {
+                    player.getWorld().dropItem(player.getLocation(), leftover);
+                }
             }
 
             // Clean up all tracking for the player
@@ -520,11 +529,17 @@ public class MigrateGUI implements Listener {
             // Standard GUI close, not during an active migration
             ItemStack itemToMigrate = gui.getItem(ITEM_SLOT);
             if (itemToMigrate != null && itemToMigrate.getType() != Material.AIR) {
-                player.getInventory().addItem(itemToMigrate);
+                HashMap<Integer, ItemStack> leftovers = player.getInventory().addItem(itemToMigrate);
+                for (ItemStack leftover : leftovers.values()) {
+                    player.getWorld().dropItem(player.getLocation(), leftover);
+                }
             }
             ItemStack materialItem = gui.getItem(MATERIAL_SLOT);
             if (materialItem != null && materialItem.getType() != Material.AIR) {
-                player.getInventory().addItem(materialItem);
+                HashMap<Integer, ItemStack> leftovers = player.getInventory().addItem(materialItem);
+                for (ItemStack leftover : leftovers.values()) {
+                    player.getWorld().dropItem(player.getLocation(), leftover);
+                }
             }
             logger.info("Returned items to " + player.getName() + " after closing GUI.");
         }

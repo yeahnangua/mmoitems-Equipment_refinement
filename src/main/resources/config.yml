@@ -18,7 +18,7 @@ migration-cost:
     # 所需MMOItems材料的类型
     type: "MATERIAL"
     # 所需MMOItems材料的ID
-    id: "MANA_GEM"
+    id: "XLS"
     # 所需数量 (列表形式, 对应第1次, 第2次, 第3次...洗炼所需的数量)
     # 如果洗炼次数超过列表长度, 将提示已达上限.
     amounts:
